@@ -39,8 +39,8 @@ This is part of ``kal-shlib-*`` package, you should see `documentation`_ of
 .. _documentation: https://github.com/vaab/kal-shlib-core/blob/master/README.rst
 
 
-How can install it ?
---------------------
+How can I install it ?
+----------------------
 
 From source
 '''''''''''
