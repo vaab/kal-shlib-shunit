@@ -220,7 +220,14 @@ A sample test file could look like this 'sample' shell script::
 
       assert_list <<EOF
 
-              ## -- this text will be displayed as title of the test ('##' and '--' are required.)
+        ### my group of test
+        ## -- my test
+
+        # ...
+
+        ## -- my second test
+
+        # ...
 
   EOF
   }
