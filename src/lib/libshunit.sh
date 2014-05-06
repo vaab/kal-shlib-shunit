@@ -224,7 +224,7 @@ function assert_list () {
 
         __assert_list_errorlevel=$?
 
-        [ "$__assert_list_errorlevel" != "0" -a "$continue_on_error" != "" ] && break
+        [ "$__assert_list_errorlevel" != "0" -a "$continue_on_error" != "1" ] && break
 
     done
 
@@ -345,7 +345,7 @@ function testbench {
                 [ $__tb_errorlevel != "0" ] && __tb_count_failed=$[$__tb_count_failed + 1] || \
                     __tb_count_succeeded=$[$__tb_count_succeeded + 1]
 
-                [ $__tb_errorlevel != "0" -a "$continue_on_error" != "" ] && break 2
+                [ "$__assert_count_failed" -gt "0" -a "$continue_on_error" != "1" ] && break 2
             fi
         done
     done
