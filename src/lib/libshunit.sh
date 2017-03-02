@@ -2,17 +2,10 @@
 
 include common pretty parse
 
-depends bc cat tail head grep egrep cut basename
-
-
-## Automatically set name of the programm under test to the name
-## of the test minus the extension ".test".
-tprog=$(basename "$exname" .test)
-
 
 function assert() {
 
-    local md5 tmp_assert quiet func_usage desc code errorlevel retry
+    local md5 tmp_assert quiet func_usage desc code errlvl retry output
 
     func_usage="$FUNCNAME: [OPTION] {description} {command line}"
 
@@ -22,17 +15,10 @@ function assert() {
     retry=""
     while true; do
         case "$1" in
-            ("-q")
-            quiet=true
-            ;;
-            ("-r")
-            retry=true
-            ;;
-            ("")
-            ;;
-            (*)
-            break
-            ;;
+            "-q") quiet=true;;
+            "-r") retry=true;;
+            "")   ;;
+            *)    break;;
         esac
         shift
     done
@@ -54,19 +40,26 @@ function assert() {
        code=$*
     fi
 
+    output=$(
+        set -o pipefail
+        {
+            set -o pipefail
+            {
+                set -o pipefail
+                {
+                    if test "$retry"; then
+                        repeat_until "$code"
+                    else
+                        timed_exec "$code"
+                    fi
+                } | sed -url1 "s/^/  ${GRAY}|${NORMAL} /g"
+            } 3>&1 1>&2 2>&3 |
+                sed -url1 "s/^/  ${RED}!${NORMAL} /g" 3>&1 1>&2 2>&3
+        } 2>&1 | quote-0
+          )
+    errlvl="$?"
 
-    md5="$(echo "$code" | md5_compat)"
-    tmp_assert="/tmp/assert.$md5.$$.tmp"
-
-    if test "$retry"; then
-       repeat_until "$code" > "$tmp_assert" 2>&1
-    else
-       timed_exec "$code" > "$tmp_assert" 2>&1
-    fi
-
-    errorlevel="$?"
-
-    if test "$errorlevel" != "0"; then
+    if test "$errlvl" != "0"; then
         print_status failure
         Feed
         status=KO
@@ -79,8 +72,8 @@ function assert() {
 $md5:$status:$exec_time:$desc"
     __assert_count_total=$[$__assert_count_total + 1]
 
-    if [ "$errorlevel" == "0" ]; then
-        rm "$tmp_assert"
+    if [ "$errlvl" == "0" ]; then
+        # rm "$tmp_assert"
 
         __assert_count_succeeded=$[$__assert_count_succeeded + 1]
         [ "$quiet" ] || Feed
@@ -91,27 +84,28 @@ $md5:$status:$exec_time:$desc"
     __assert_count_failed=$[$__assert_count_failed + 1]
 
     [ "$retry" ] && echo "${YELLOW}++++++${WHITE} RETRY MODE (max_retries=$max_retries, sleep_time=$sleep_time)${NORMAL}"
-    echo "${YELLOW}*****${WHITE} Full description:${NORMAL}"
-    echo "$desc"
-    echo "${YELLOW}*****${WHITE} code:${NORMAL}"
-    echo "$code"
-    echo "${YELLOW}>>>>> ${WHITE}Log info follows:$NORMAL"
-    "$cat" "$tmp_assert"
-    echo "${YELLOW}<<<<< ${WHITE}End Log."
-    echo "${YELLOW}*****$NORMAL Errorlevel was : ${WHITE}$errorlevel${NORMAL}"
 
-    return $errorlevel
+    echo "${DARKRED}Failed test description:${NORMAL} $desc"
+    echo " ${DARKYELLOW}code$NORMAL"
+    echo "$code" | sed -r "s/^/  $GRAY|$NORMAL /g"
+    echo " ${DARKYELLOW}output (${YELLOW}$errlvl${NORMAL})${DARKYELLOW}:${NORMAL}"
+    unquote-0 "$output"
+    return $errlvl
+
 
 }
 
 
 function timed_exec() {
-
-    local errorlevel beg_exec
+    local errorlevel beg_exec end_exec
 
     beg_exec=$(date +%s.%N)
 
-    ( echo "$*" | bash )
+    ## Avoid piping into bash ! Piping into bash some code that will read
+    ## stdin will exhaust the remaining code, and thus NOT execute all the coe
+    ## in bash, but also inject this remaining code in the listening process
+    ## with not so obvious consequence.
+    ( bash -c -- "$@")
     errorlevel=$?
 
     end_exec=$(date +%s.%N)
@@ -160,14 +154,14 @@ function assert_list () {
     while true; do
         case "$1" in
             ("-s")
-            __al_summary=true
-            ;;
+                __al_summary=true
+                ;;
             ("-q")
-            __al_quiet=true
-            ;;
+                __al_quiet=true
+                ;;
             (*)
-            break
-            ;;
+                break
+                ;;
         esac
         shift
     done
@@ -180,7 +174,7 @@ function assert_list () {
 
     while test "$list" ; do
 
-        line_header=$(echo "$list" | "$grep" "^##" -n -m 1 | "$cut" -f 1 -d ":")
+        line_header=$(echo "$list" | "$grep" -E "^##(#| --)" -n -m 1 | "$cut" -f 1 -d ":")
 
         header=$(echo "$list" | "$head" -n "$line_header" | "$tail" -n 1)
         _tail=$(echo "$list" | "$tail" -n "+$[line_header + 1]")
@@ -191,7 +185,7 @@ function assert_list () {
             continue;
         fi
 
-        next_header=$(echo "$_tail" | "$grep" "^##" -n -m 1 | "$cut" -f 1 -d ":")
+        next_header=$(echo "$_tail" | "$grep" -E "^##(#| --)" -n -m 1 | "$cut" -f 1 -d ":")
         if test "$next_header" == ""; then
             code="$_tail"
             list=""
@@ -284,15 +278,15 @@ function testbench {
     while true; do
         case "$1" in
             ("-s")
-            __tb_summary=true
-            ;;
+                __tb_summary=true
+                ;;
             ("-q")
-            __tb_quiet=true
-            export __repress_feed=true
-            ;;
+                __tb_quiet=true
+                export __repress_feed=true
+                ;;
             (*)
-            break
-            ;;
+                break
+                ;;
         esac
         shift
     done
@@ -313,37 +307,32 @@ function testbench {
                     Section setUp
                     eval "test_$i".setUp
                 fi
-                (
-                    (eval "test_$i" );
-                    echo "$?:$__assert_count_total:$__assert_count_failed:$__assert_count_succeeded" > "$tmp_tb"
-                )
+                ( "test_$i" )
+                errlvl="$?"
+                echo "$errlvl:$__assert_count_total:$__assert_count_failed:$__assert_count_succeeded" > "$tmp_tb"
 
                 ## Feed is needed because in the eval the pretty printing
                 ## function Title, Section... might have been used. And their
                 ## status cannot be tracked correctly:
                 Feed
 
-                return_values=$(cat "$tmp_tb")
+                IFS=":" read -r __tb_errorlevel __ac_tot __ac_fail __ac_success < <(cat "$tmp_tb")
                 rm -f "$tmp_tb"
 
-                __assert_count_total=$[ $__assert_count_total + $(echo "$return_values" | cut -f 2 -d ":")]
-
-                __assert_count_failed=$[ $__assert_count_failed + $(echo "$return_values" | cut -f 3 -d ":")]
-
-                __assert_count_succeeded=$[ $__assert_count_succeeded + $(echo "$return_values" | cut -f 4 -d ":")]
-
-                __tb_errorlevel=$(echo "$return_values" | cut -f 1 -d ":")
+                ((__assert_count_total+=$__ac_tot))
+                ((__assert_count_failed+=$__ac_fail))
+                ((__assert_count_succeeded+=$__ac_success))
 
                 if export -f "test_$i.tearDown" >/dev/null 2>&1 ;then
                     Section tearDown
-            (
-                    eval "test_$i".tearDown
-            )
+                    (
+                        eval "test_$i".tearDown
+                    )
                 fi
 
-                __tb_count_total=$[$__tb_count_total + 1]
-                [ $__tb_errorlevel != "0" ] && __tb_count_failed=$[$__tb_count_failed + 1] || \
-                    __tb_count_succeeded=$[$__tb_count_succeeded + 1]
+                ((__tb_count_total++))
+
+                [ $__tb_errorlevel != "0" ] && ((__tb_count_failed++)) || ((__tb_count_succeeded++))
 
                 [ "$__assert_count_failed" -gt "0" -a "$continue_on_error" != "1" ] && break 2
             fi
@@ -417,6 +406,15 @@ function testbenchdir {
 
 }
 
-export -f repeat_until
+shunit:init() {
+    depends bc cat tail head grep egrep cut basename
+
+    ## Automatically set name of the programm under test to the name
+    ## of the test minus the extension ".test".
+    tprog=$(basename "$exname" .test)
+
+
+}
+
 
 ## End libshunit.sh

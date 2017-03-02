@@ -1,71 +1,16 @@
-#!/bin/bash
+# -*- mode: shell-script -*-
 
-src_file="$pkg_path"/lib/libshunit.sh
-
-##
-## You can launch these test by calling:
-##
-##     pkg_path="../src" TESTNAME
-##
-## ``pkg_path`` is the path to the source/prefix directory which
-## contains lib to test.
-##
-
-exname=$(basename $0)
-
-if test -z "$pkg_path"; then
-    echo "You can launch these test by calling:"
-    echo
-    echo '    pkg_path="../src" '$0
-    echo
-    echo -n "'pkg_path' is the path to the source/prefix directory which "
-    echo "contains lib to test."
-    exit 1
-fi
-
-
-export pkg_path src_file pkg_path_common pkg_path_pretty
-[ "$DEBUG" ] && echo "Loading testlib..."
-if ! . ./libtest ; then
-   echo 'libtest failed to load.'
-   exit 1
-fi
-
-export COLUMNS=50
-
-pkg_path_common=${pkg_path_common:-/usr/lib/shlib}
-if ! test -f "$pkg_path_common/libcolor.sh"; then
-    echo "These tests need to know where to find 'libcolor.sh'. You do not have it in '$pkg_path_common',"
-    echo "so please provide the correct location:"
-    echo
-    echo "    pkg_path_common='correct/location' pkg_path='$pkg_path'" "$0" "$@"
-    echo
-    exit 1
-fi
-
-pkg_path_pretty=${pkg_path_pretty:-/usr/lib/shlib}
-if ! test -f "$pkg_path_pretty/libcolor.sh"; then
-    echo "These tests need to know where to find 'libcolor.sh'. You do not have it in '$pkg_path_pretty',"
-    echo "so please provide the correct location:"
-    echo
-    echo "    pkg_path_pretty='correct/location' pkg_path='$pkg_path'" "$0" "$@"
-    echo
-    exit 1
-fi
-
+src_file=../src/lib/libshunit.sh
 
 prefix_cmd="
 . /etc/shlib
 
 source '$src_file'
-. '$pkg_path_common/libcolor.sh'
-. '$pkg_path_pretty/libpretty.sh'
+shunit:init
 "
 
-
-##
-## Elt
-##
+export COLUMNS=50
+export SIZE_LINE=
 
 # Bare assert
 try '
@@ -73,7 +18,9 @@ ansi_color no
 assert "My description" "true"
 '
 noerror
-is out " - My description                      [  OK  ] T"
+##     "12345678901234567890123456789012345678901234567890"
+is out " - My description                      [  OK  ] T
+"
 
 # Bare assert false
 try '
@@ -81,14 +28,13 @@ ansi_color no
 assert "My description" "false"
 '
 is errlvl 1
-is out " - My description                      [FAILED] T
-***** Full description:
-My description
-***** code:
-false
->>>>> Log info follows:
-<<<<< End Log.
-***** Errorlevel was : 1"
+is out "\
+ - My description                      [FAILED] T
+Failed test description: My description
+ code
+  | false
+ output (1):
+"
 
 # Quiet assert ok
 try '
@@ -105,14 +51,13 @@ ansi_color no
 assert -q "My description" "false"
 '
 is errlvl 1
-is out " - My description                      [FAILED] T
-***** Full description:
-My description
-***** code:
-false
->>>>> Log info follows:
-<<<<< End Log.
-***** Errorlevel was : 1"
+is out "\
+ - My description                      [FAILED] T
+Failed test description: My description
+ code
+  | false
+ output (1):
+"
 
 ##
 ## Profiling
@@ -121,7 +66,4 @@ false
 # Quiet assert false
 try 'timed_exec "true" && echo $exec_time'
 noerror
-is out reg "^[0-9]+(\.[0-9]+)?\$"
-
-
-summary
+is out reg "^[0-9]+(\.[0-9]+)?\$" TRIM
